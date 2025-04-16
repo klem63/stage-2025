@@ -96,7 +96,7 @@ dgo_id = 1
 
 while current_distance < line.length:
     found = False
-    for l in np.arange(50, 2000, step):  # testons des longueurs croissantes
+    for l in np.arange(50, 10000, step):  # testons des longueurs croissantes
         if current_distance + l >= line.length:
             l = line.length - current_distance
         sub = substring(line, current_distance, current_distance + l)
@@ -105,7 +105,7 @@ while current_distance < line.length:
         clipped = buffer_zone.intersection(plaine_complete_geom)
         if not clipped.is_empty:
             area = clipped.area
-            if surface_ideale * 0.95 <= area <= surface_ideale * 1.05:
+            if surface_ideale * 0.85 <= area <= surface_ideale * 1.15:
                 dgo_polygons.append(clipped)
                 current_distance += l
                 found = True
@@ -121,6 +121,3 @@ dgo_gdf = gpd.GeoDataFrame({"id": range(1, len(dgo_polygons)+1)}, geometry=dgo_p
 dgo_gdf["surface_m2"] = dgo_gdf.geometry.area
 dgo_gdf["longueur_m"] = [poly.length for poly in dgo_gdf.geometry]
 dgo_gdf.to_file(output_path)
-
-
-
