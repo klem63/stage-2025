@@ -8,9 +8,10 @@ import os
 # === PARAMÈTRES ===
 transect_spacing = 20  # m
 surface_tolerance = 0.10  # ±10% tolérance
-output_path = "dgo_output_partition.shp"
+output_path = "dgo_output.shp"
 
-# === CHARGEMENT DES DONNÉES ===
+print("=== Chargement des données ===")
+
 centerline = gpd.read_file("centerline_paris.shp")
 plaine_amont_aval = gpd.read_file("study_area_amont_aval_paris.shp")
 plaine_complete = gpd.read_file("study_area_global_reach_paris_grouped.shp")
@@ -20,6 +21,8 @@ target_crs = "EPSG:2154"
 centerline = centerline.to_crs(target_crs)
 plaine_amont_aval = plaine_amont_aval.to_crs(target_crs)
 plaine_complete = plaine_complete.to_crs(target_crs)
+
+print("CRS harmonisé :", target_crs)
 
 # === PRÉPARATION GÉOMÉTRIQUE ===
 merged_geom = centerline.geometry.union_all()
@@ -35,9 +38,12 @@ else:
 plaine_geom = plaine_complete.geometry.union_all()
 plaine_amont_aval_geom = plaine_amont_aval.geometry.union_all()
 
+print("Longueur de la centerline :", line.length)
+
 # === POINTS SUR LA CENTERLINE ===
 distances = np.arange(0, line.length, transect_spacing)
 points = [line.interpolate(d) for d in distances]
+print(f"{len(points)} points générés le long de la centerline")
 
 # === FONCTION POUR LES TRANSECTS ===
 def make_transect(i):
@@ -48,7 +54,7 @@ def make_transect(i):
     perp = (-dy, dx)
     norm = np.hypot(perp[0], perp[1])
     ux, uy = perp[0] / norm, perp[1] / norm
-    half_length = 1000
+    half_length = 8000
     return LineString([
         (points[i].x - ux * half_length, points[i].y - uy * half_length),
         (points[i].x + ux * half_length, points[i].y + uy * half_length)
@@ -56,6 +62,7 @@ def make_transect(i):
 
 transects = [make_transect(i) for i in range(1, len(points) - 1)]
 transects = [t for t in transects if t is not None]
+print(f"{len(transects)} transects générés")
 
 # === CRÉATION DES CELLULES ENTRE TRANSECTS SUCCESSIFS ===
 cellules = []
@@ -65,13 +72,11 @@ for i in range(len(transects) - 1):
         *transects[i + 1].coords
     ])
 
-    # Nettoyage des géométries pour éviter les erreurs topologiques
     if not cutter.is_valid:
         cutter = cutter.buffer(0)
     if not plaine_geom.is_valid:
         plaine_geom = plaine_geom.buffer(0)
 
-    # Intersection sécurisée
     clipped = plaine_geom.intersection(cutter)
 
     if not clipped.is_empty:
@@ -81,11 +86,17 @@ for i in range(len(transects) - 1):
             polys = [g for g in clipped.geoms if isinstance(g, (Polygon, MultiPolygon))]
             if polys:
                 cellules.append(shapely.union_all(polys))
-                
+
+print(f"{len(cellules)} cellules créées à partir des transects")
+
 # === CALCUL DE LA SURFACE IDÉALE ===
 transects_amont_aval = [t for t in transects if not t.intersection(plaine_amont_aval_geom).is_empty]
 largeurs = [t.intersection(plaine_amont_aval_geom).length for t in transects_amont_aval]
-surface_ideale = np.mean(largeurs) ** 2
+largeur_moyenne = np.mean(largeurs)
+surface_ideale = largeur_moyenne ** 2
+
+print(f"Largeur moyenne mesurée sur la plaine amont-aval : {largeur_moyenne:.2f} m")
+print(f"Surface idéale ciblée : {surface_ideale:.2f} m²")
 
 # === AGGRÉGATION DES CELLULES EN DGO ===
 dgo_polygons = []
@@ -99,6 +110,8 @@ for cell in cellules:
         temp_group = []
         accum_area = 0
 
+print(f"{len(dgo_polygons)} DGO créés par agrégation des cellules")
+
 # === EXPORT FINAL ===
 dgo_gdf = gpd.GeoDataFrame({
     "id": range(1, len(dgo_polygons) + 1),
@@ -107,4 +120,4 @@ dgo_gdf = gpd.GeoDataFrame({
 }, geometry=dgo_polygons, crs=target_crs)
 
 dgo_gdf.to_file(output_path)
-print("Export terminé.")
+print(f"Export terminé vers : {output_path}")
